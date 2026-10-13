@@ -1,6 +1,6 @@
 {
-  "name": "飲み会 会費計算",
-  "short_name": "会費計算",
+  "name": "打ち上げ計算",
+  "short_name": "打ち上げ計算",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
