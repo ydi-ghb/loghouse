@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="会費計算">
+<meta name="theme-color" content="#2b6cb0">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>飲み会 会費計算</title>
+<style>
+:root{--bg:#f5f7fa;--card:#fff;--text:#1a202c;--sub:#667085;--accent:#2b6cb0;--line:#e2e8f0;--ok:#2f855a;--ng:#c53030}
+@media (prefers-color-scheme:dark){:root{--bg:#10151c;--card:#1a212b;--text:#e8edf3;--sub:#98a2b3;--accent:#63a4e8;--line:#2b3542;--ok:#5fd08e;--ng:#f08080}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 32px)}
+main{max-width:560px;margin:0 auto}
+h1{font-size:22px;margin:20px 0 14px}
+h2{font-size:16px;margin:0 0 8px}
+h2.out{margin:20px 0 8px}
+h3{font-size:15px;margin:0 0 8px;color:var(--accent)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+.hint{color:var(--sub);font-size:13px;margin:0 0 8px}
+.row,.inline{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+.row input,.inline input{flex:1;min-width:0}
+input[type=number]{font-size:16px;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text);width:100%}
+.opt{display:block;padding:6px 0}
+.opt input{margin-right:8px}
+button{font:inherit;cursor:pointer}
+button.ghost{background:none;border:1px dashed var(--accent);color:var(--accent);border-radius:8px;padding:8px 12px;width:100%}
+button.small{width:auto;margin-top:8px;border-style:solid;border-color:var(--line);color:var(--sub)}
+button.del{background:none;border:none;color:var(--sub);font-size:20px;padding:4px 8px}
+table{width:100%;border-collapse:collapse;font-size:15px}
+th,td{padding:6px 4px;text-align:right;border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--sub);font-weight:normal;font-size:13px}
+td.p{font-weight:bold}
+.sum{margin-top:10px}
+.sum div{display:flex;justify-content:space-between;padding:2px 0}
+.sum .profit{border-top:1px solid var(--line);margin-top:4px;padding-top:6px;font-size:17px}
+.sum .profit b{color:var(--ok)}
+.sum .profit.neg b{color:var(--ng)}
+.warn{color:var(--ng);font-size:14px;margin:0 0 8px}
+</style>
+</head>
+<body>
+<main>
+<h1>飲み会 会費計算</h1>
+
+<section class="card">
+  <h2>1・2　期と人数</h2>
+  <p class="hint">期の数字が大きいほど下の世代です。</p>
+  <div id="rows"></div>
+  <button id="add" class="ghost">＋ 期を追加</button>
+</section>
+
+<section class="card">
+  <h2>3　傾斜</h2>
+  <label class="opt"><input type="radio" name="grad" value="0" checked>つけない(全員同額)</label>
+  <label class="opt"><input type="radio" name="grad" value="1">つける(上の期ほど高く、下の期ほど安く)</label>
+</section>
+
+<section class="card">
+  <h2>金額の刻みと赤字の許容</h2>
+  <label class="opt"><input type="radio" name="step" value="1000" checked>1000円刻み</label>
+  <label class="opt"><input type="radio" name="step" value="500">500円刻み(より細かく調整)</label>
+  <p class="hint" style="margin-top:8px">足りない分を幹部が持ち出してよい上限(赤字は黒字より後回しで表示します)</p>
+  <div class="inline"><input id="tol" type="number" inputmode="numeric" placeholder="例 2000"><span>円まで</span></div>
+</section>
+
+<section class="card">
+  <h2>4　支払う総額</h2>
+  <div class="inline"><input id="total" type="number" inputmode="numeric" placeholder="例 120000"><span>円</span></div>
+</section>
+
+<section class="card">
+  <h2>5　補助</h2>
+  <label class="opt"><input type="radio" name="sub" value="0" checked>なし</label>
+  <label class="opt"><input type="radio" name="sub" value="1">あり</label>
+  <div id="subBox" class="inline" hidden><input id="subsidy" type="number" inputmode="numeric" placeholder="補助の金額 例 20000"><span>円</span></div>
+</section>
+
+<h2 class="out">6　結果</h2>
+<div id="result"></div>
+
+<button id="reset" class="ghost small">入力をリセット</button>
+</main>
+
+<script>
+const MIN_PRICE = 1000;  // 1人あたりの最低額
+const MAX_PRICE = 30000; // 1人あたりの最高額
+const MAX_DIFF_YEN = 2000; // 隣り合う期の差は最大 2000円 まで
+
+// 並べ替えの点数(小さいほど良い):黒字はそのまま、赤字は2倍のペナルティ
+const cost = profit => profit >= 0 ? profit : -profit * 2;
+
+function toNum(v){ const x = Number(v); return Number.isFinite(x) ? x : 0; }
+function yen(n){ return n.toLocaleString('ja-JP') + '円'; }
+
+// 入力行 → 期ごとの人数(期の若い順=上の世代が先)
+function buildGroups(rows){
+  const map = new Map(); let dup = false;
+  for(const r of rows){
+    if(r.gen === '' || r.n === '') continue;
+    const g = Math.round(toNum(r.gen)), n = Math.round(toNum(r.n));
+    if(!(g > 0) || !(n > 0)) continue;
+    if(map.has(g)) dup = true;
+    map.set(g, (map.get(g) || 0) + n);
+  }
+  const groups = [...map.entries()].sort((a, b) => a[0] - b[0]).map(([gen, n]) => ({gen, n}));
+  return {groups, dup};
+}
+
+// 傾斜なし:全員同額。切り上げ案と切り捨て案(赤字が許容内のときだけ)を比べる
+function flatCandidates(required, people, step, tol){
+  const up = Math.max(0, Math.ceil(required / people / step) * step);
+  const down = up - step;
+  const list = [{price: up, profit: up * people - required}];
+  if(down >= MIN_PRICE && required - down * people <= tol){
+    list.push({price: down, profit: down * people - required});
+  }
+  list.sort((a, b) => cost(a.profit) - cost(b.profit) || a.price - b.price);
+  return list;
+}
+
+// 傾斜あり:上の期ほど高い(同額もOK)全パターンから、利益(または赤字)が小さいものを探す
+function findPatterns(counts, required, step, tol){
+  const n = counts.length;
+  const people = counts.reduce((a, b) => a + b, 0);
+  const slack = people * step;
+  const maxD = Math.round(MAX_DIFF_YEN / step);
+  const found = [];
+  const seq = new Array(n);
+  function dfs(i, prev, sum){
+    if(sum - required >= slack) return;
+    if(i === n){
+      const profit = sum - required;
+      if(profit >= -tol) found.push({prices: seq.slice(), profit});
+      return;
+    }
+    for(let d = 0; d <= maxD; d++){
+      const p = prev - d * step;
+      if(p < MIN_PRICE) break;
+      seq[i] = p;
+      dfs(i + 1, p, sum + p * counts[i]);
+    }
+  }
+  for(let p0 = Math.ceil(MIN_PRICE / step) * step; p0 <= MAX_PRICE; p0 += step){
+    seq[0] = p0;
+    dfs(1, p0, p0 * counts[0]);
+  }
+  const byK = new Map();
+  for(const f of found){
+    const k = new Set(f.prices).size;
+    if(k < 2) continue;
+    if(!byK.has(k)) byK.set(k, []);
+    byK.get(k).push(f);
+  }
+  const spread = f => f.prices[0] - f.prices[n - 1];
+  return [...byK.entries()].sort((a, b) => a[0] - b[0]).map(([k, list]) => {
+    list.sort((a, b) => cost(a.profit) - cost(b.profit) || a.prices[0] - b.prices[0] || spread(a) - spread(b));
+    return {k, list: list.slice(0, 2)};
+  });
+}
+
+/* ---------------- 画面 ---------------- */
+if(typeof document !== 'undefined'){
+  const $ = s => document.querySelector(s);
+  const KEY = 'kaihi-calc-v1';
+  const fresh = () => ({rows: [{gen:'',n:''},{gen:'',n:''},{gen:'',n:''}], gradient: false, step: 1000, tol: 2000, total: '', subsidyOn: false, subsidy: ''});
+  let state = fresh();
+  try{ Object.assign(state, JSON.parse(localStorage.getItem(KEY)) || {}); }catch(e){}
+  if(!Array.isArray(state.rows) || !state.rows.length) state.rows = [{gen:'',n:''}];
+
+  const save = () => { try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){} };
+  const clean = v => String(v == null ? '' : v).replace(/[^0-9.\-]/g, '');
+
+  function renderRows(){
+    $('#rows').innerHTML = state.rows.map((r, i) => `
+      <div class="row">
+        <input type="number" inputmode="numeric" data-i="${i}" data-k="gen" value="${clean(r.gen)}" placeholder="期 例 45"><span>期</span>
+        <input type="number" inputmode="numeric" data-i="${i}" data-k="n" value="${clean(r.n)}" placeholder="人数"><span>人</span>
+        <button class="del" data-del="${i}" aria-label="削除">×</button>
+      </div>`).join('');
+  }
+
+  function syncControls(){
+    document.querySelector(`input[name=grad][value="${state.gradient ? 1 : 0}"]`).checked = true;
+    document.querySelector(`input[name=sub][value="${state.subsidyOn ? 1 : 0}"]`).checked = true;
+    document.querySelector(`input[name=step][value="${state.step === 500 ? 500 : 1000}"]`).checked = true;
+    $('#tol').value = clean(state.tol);
+    $('#total').value = clean(state.total);
+    $('#subsidy').value = clean(state.subsidy);
+    $('#subBox').hidden = !state.subsidyOn;
+  }
+
+  function card(title, groups, prices, total, sub){
+    let collected = 0;
+    const body = groups.map((g, i) => {
+      const s = prices[i] * g.n; collected += s;
+      return `<tr><td>${g.gen}期</td><td>${g.n}人</td><td class="p">${yen(prices[i])}</td><td>${yen(s)}</td></tr>`;
+    }).join('');
+    const profit = collected + sub - total;
+    return `<div class="card">
+      <h3>${title}</h3>
+      <table><thead><tr><th>期</th><th>人数</th><th>1人あたり</th><th>小計</th></tr></thead><tbody>${body}</tbody></table>
+      <div class="sum">
+        <div><span>集金合計</span><b>${yen(collected)}</b></div>
+        ${sub ? `<div><span>補助</span><b>${yen(sub)}</b></div>` : ''}
+        <div><span>支払総額</span><b>${yen(total)}</b></div>
+        <div class="profit ${profit < 0 ? 'neg' : ''}"><span>${profit < 0 ? '赤字(持ち出し)' : '利益'}</span><b>${yen(Math.abs(profit))}</b></div>
+      </div></div>`;
+  }
+
+  function update(){
+    save();
+    $('#subBox').hidden = !state.subsidyOn;
+    const out = $('#result');
+    const {groups, dup} = buildGroups(state.rows);
+    const total = Math.round(toNum(state.total));
+    const sub = state.subsidyOn ? Math.round(toNum(state.subsidy)) : 0;
+    if(!groups.length || total <= 0){
+      out.innerHTML = '<p class="hint">期・人数と支払総額を入力すると、ここに結果が出ます。</p>';
+      return;
+    }
+    const people = groups.reduce((s, g) => s + g.n, 0);
+    const required = total - sub;
+    const step = state.step === 500 ? 500 : 1000;
+    const tol = Math.max(0, Math.round(toNum(state.tol)));
+    let html = '';
+    if(dup) html += '<p class="warn">同じ期が複数行あったので、人数を合算しています。</p>';
+    html += `<div class="card"><div class="sum">
+      <div><span>参加人数</span><b>${people}人</b></div>
+      <div><span>集めるべき金額(総額 − 補助)</span><b>${yen(Math.max(required, 0))}</b></div></div></div>`;
+
+    if(required <= 0){
+      out.innerHTML = html + '<p class="hint">補助だけで支払総額をまかなえるので、会費は0円で足ります。</p>';
+      return;
+    }
+
+    if(!state.gradient || groups.length < 2){
+      if(state.gradient) html += '<p class="hint">期が1つだけなので傾斜はつけられません。全員同額で計算しています。</p>';
+      flatCandidates(required, people, step, tol).forEach((c, idx) => {
+        html += card(`全員同額　候補${idx + 1}`, groups, groups.map(() => c.price), total, sub);
+      });
+    }else{
+      const pats = findPatterns(groups.map(g => g.n), required, step, tol);
+      if(!pats.length){
+        html += '<p class="warn">条件に合う金額パターンが見つかりませんでした。総額や人数を確認してください。</p>';
+      }
+      const n = groups.length;
+      for(const {k, list} of pats){
+        const label = k === n ? `全部違う金額(${k}種類)` : (n === 3 && k === 2 ? '2つの期が同額(2種類)' : `${k}種類の金額(同額の期あり)`);
+        list.forEach((f, idx) => {
+          html += card(`${label}　候補${idx + 1}`, groups, f.prices, total, sub);
+        });
+      }
+      html += `<p class="hint">上の期ほど高く、隣り合う期の差は最大2,000円まで。${step}円刻みで、利益が小さい順に出しています(赤字は${yen(tol)}まで許容、ただし黒字を優先)。</p>`;
+    }
+    out.innerHTML = html;
+  }
+
+  $('#rows').addEventListener('input', e => {
+    const t = e.target;
+    if(t.dataset.i === undefined) return;
+    state.rows[+t.dataset.i][t.dataset.k] = t.value;
+    update();
+  });
+  $('#rows').addEventListener('click', e => {
+    const d = e.target.closest('[data-del]');
+    if(!d) return;
+    state.rows.splice(+d.dataset.del, 1);
+    if(!state.rows.length) state.rows.push({gen:'', n:''});
+    renderRows(); update();
+  });
+  $('#add').addEventListener('click', () => {
+    if(state.rows.length >= 10) return;
+    state.rows.push({gen:'', n:''});
+    renderRows(); update();
+  });
+  document.querySelectorAll('input[name=grad]').forEach(el => el.addEventListener('change', () => {
+    state.gradient = el.value === '1' && el.checked ? true : (el.checked ? false : state.gradient);
+    update();
+  }));
+  document.querySelectorAll('input[name=sub]').forEach(el => el.addEventListener('change', () => {
+    if(el.checked) state.subsidyOn = el.value === '1';
+    update();
+  }));
+  document.querySelectorAll('input[name=step]').forEach(el => el.addEventListener('change', () => {
+    if(el.checked) state.step = +el.value;
+    update();
+  }));
+  $('#tol').addEventListener('input', e => { state.tol = e.target.value; update(); });
+  $('#total').addEventListener('input', e => { state.total = e.target.value; update(); });
+  $('#subsidy').addEventListener('input', e => { state.subsidy = e.target.value; update(); });
+  $('#reset').addEventListener('click', () => {
+    if(!confirm('入力をすべてリセットしますか?')) return;
+    state = fresh(); renderRows(); syncControls(); update();
+  });
+
+  renderRows(); syncControls(); update();
+}
+if('serviceWorker' in navigator){ window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {})); }
+</script>
+</body>
+</html>
