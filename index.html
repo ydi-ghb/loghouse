@@ -62,10 +62,10 @@ td.p{font-weight:bold}
 </section>
 
 <section class="card">
-  <h2>金額の刻みと赤字の許容</h2>
+  <h2>金額の刻みと最大許容赤字金額</h2>
   <label class="opt"><input type="radio" name="step" value="1000" checked>1000円刻み</label>
   <label class="opt"><input type="radio" name="step" value="500">500円刻み(より細かく調整)</label>
-  <p class="hint" style="margin-top:8px">足りない分を幹部が持ち出してよい上限(赤字は黒字より後回しで表示します)</p>
+  <p class="hint" style="margin-top:8px">最大許容赤字金額(赤字の案は、黒字の案より後に表示します)</p>
   <div class="inline"><input id="tol" type="number" inputmode="numeric" placeholder="例 2000"><span>円まで</span></div>
 </section>
 
@@ -75,10 +75,10 @@ td.p{font-weight:bold}
 </section>
 
 <section class="card">
-  <h2>5　補助</h2>
+  <h2>5　会長などからの補助金</h2>
   <label class="opt"><input type="radio" name="sub" value="0" checked>なし</label>
   <label class="opt"><input type="radio" name="sub" value="1">あり</label>
-  <div id="subBox" class="inline" hidden><input id="subsidy" type="number" inputmode="numeric" placeholder="補助の金額 例 20000"><span>円</span></div>
+  <div id="subBox" class="inline" hidden><input id="subsidy" type="number" inputmode="numeric" placeholder="補助金の額 例 20000"><span>円</span></div>
 </section>
 
 <h2 class="out">6　結果</h2>
@@ -207,9 +207,9 @@ if(typeof document !== 'undefined'){
       <table><thead><tr><th>期</th><th>人数</th><th>1人あたり</th><th>小計</th></tr></thead><tbody>${body}</tbody></table>
       <div class="sum">
         <div><span>集金合計</span><b>${yen(collected)}</b></div>
-        ${sub ? `<div><span>補助</span><b>${yen(sub)}</b></div>` : ''}
+        ${sub ? `<div><span>補助金(会長など)</span><b>${yen(sub)}</b></div>` : ''}
         <div><span>支払総額</span><b>${yen(total)}</b></div>
-        <div class="profit ${profit < 0 ? 'neg' : ''}"><span>${profit < 0 ? '赤字(持ち出し)' : '利益'}</span><b>${yen(Math.abs(profit))}</b></div>
+        <div class="profit ${profit < 0 ? 'neg' : ''}"><span>${profit < 0 ? '赤字' : '利益'}</span><b>${yen(Math.abs(profit))}</b></div>
       </div></div>`;
   }
 
@@ -232,10 +232,10 @@ if(typeof document !== 'undefined'){
     if(dup) html += '<p class="warn">同じ期が複数行あったので、人数を合算しています。</p>';
     html += `<div class="card"><div class="sum">
       <div><span>参加人数</span><b>${people}人</b></div>
-      <div><span>集めるべき金額(総額 − 補助)</span><b>${yen(Math.max(required, 0))}</b></div></div></div>`;
+      <div><span>集めるべき金額(総額 − 補助金)</span><b>${yen(Math.max(required, 0))}</b></div></div></div>`;
 
     if(required <= 0){
-      out.innerHTML = html + '<p class="hint">補助だけで支払総額をまかなえるので、会費は0円で足ります。</p>';
+      out.innerHTML = html + '<p class="hint">補助金だけで支払総額をまかなえるので、会費は0円で足ります。</p>';
       return;
     }
 
@@ -256,7 +256,7 @@ if(typeof document !== 'undefined'){
           html += card(`${label}　候補${idx + 1}`, groups, f.prices, total, sub);
         });
       }
-      html += `<p class="hint">上の期ほど高く、隣り合う期の差は最大2,000円まで。${step}円刻みで、利益が小さい順に出しています(赤字は${yen(tol)}まで許容、ただし黒字を優先)。</p>`;
+      html += `<p class="hint">上の期ほど高く、隣り合う期の差は最大2,000円まで。${step}円刻みで、利益が小さい順に出しています(赤字は${yen(tol)}まで、ただし黒字を優先)。</p>`;
     }
     out.innerHTML = html;
   }
